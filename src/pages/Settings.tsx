@@ -98,24 +98,48 @@ export default function Settings() {
     try {
       const beCollection = await brickEconomyService.getMySetCollection();
       const existingSets = await storageService.getCollectionSets();
-      const existingNums = new Set(existingSets.map(s => s.set_num));
+      // Map set_num -> existing CollectionSet for duplicate handling
+      const existingByNum = new Map(existingSets.map(s => [s.set_num, s]));
       let imported = 0;
-      let skipped = 0;
+      let dupes = 0;
 
-      for (const beSet of beCollection.sets) {
+      const conditionMap: Record<string, CollectionSet['status']> = {
+        'new': 'NISB',
+        'used_as_new': 'COMPLETE_WITH_BOX',
+        'used_complete': 'COMPLETE_NO_BOX',
+        'used_incomplete': 'INCOMPLETE',
+      };
+
+      for (let i = 0; i < beCollection.sets.length; i++) {
+        const beSet = beCollection.sets[i];
         const setNum = beSet.set_number;
-        if (existingNums.has(setNum)) { skipped++; continue; }
 
-        setImportProgress(`Importing ${imported + skipped + 1}/${beCollection.sets.length}: ${beSet.name}...`);
+        setImportProgress(`Importing ${i + 1}/${beCollection.sets.length}: ${beSet.name}...`);
+
+        const existing = existingByNum.get(setNum);
+        if (existing) {
+          // Duplicate — increment quantity and add acquisition
+          const updated: CollectionSet = {
+            ...existing,
+            quantity: (existing.quantity || 1) + 1,
+            acquisitions: [
+              ...(existing.acquisitions || []),
+              ...(beSet.paid_price ? [{
+                id: `acq_be_${Date.now()}_${Math.random().toString(36).slice(2, 4)}`,
+                date: beSet.aquired_date,
+                price: beSet.paid_price,
+                source: 'RETAIL' as const,
+                source_detail: 'Imported from BrickEconomy (additional copy)',
+              }] : []),
+            ],
+          };
+          await storageService.saveCollectionSet(updated);
+          existingByNum.set(setNum, updated);
+          dupes++;
+          continue;
+        }
 
         const now = new Date().toISOString();
-        const conditionMap: Record<string, CollectionSet['status']> = {
-          'new': 'NISB',
-          'used_as_new': 'COMPLETE_WITH_BOX',
-          'used_complete': 'COMPLETE_NO_BOX',
-          'used_incomplete': 'INCOMPLETE',
-        };
-
         const collectionSet: CollectionSet = {
           id: `set_be_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           set_num: setNum,
@@ -147,12 +171,47 @@ export default function Settings() {
           updated_at: now,
         };
         await storageService.saveCollectionSet(collectionSet);
-        existingNums.add(setNum);
+        existingByNum.set(setNum, collectionSet);
         imported++;
       }
 
+      // Phase 2: Fetch images from Rebrickable (no daily limit, just rate-limited)
+      setImportProgress('Fetching images from Rebrickable...');
+      const allSets = await storageService.getCollectionSets();
+      const setsNeedingImages = allSets.filter(s => !s.set_data.set_img_url);
+      let imagesFound = 0;
+
+      for (let i = 0; i < setsNeedingImages.length; i++) {
+        const s = setsNeedingImages[i];
+        if (i % 10 === 0) {
+          setImportProgress(`Fetching images ${i + 1}/${setsNeedingImages.length}...`);
+        }
+        try {
+          const rbData = await rebrickableService.getSet(s.set_num);
+          if (rbData.set_img_url || rbData.set_url) {
+            const updated: CollectionSet = {
+              ...s,
+              set_data: {
+                ...s.set_data,
+                set_img_url: rbData.set_img_url ?? undefined,
+                set_url: rbData.set_url,
+                theme_id: rbData.theme_id || s.set_data.theme_id,
+              },
+            };
+            await storageService.saveCollectionSet(updated);
+            imagesFound++;
+          }
+        } catch {
+          // Set not found on Rebrickable — skip silently
+        }
+        // Small delay to respect rate limits
+        if (i < setsNeedingImages.length - 1) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+
       setBeQuota(brickEconomyService.getRemainingQuota());
-      showMessage('success', `Imported ${imported} sets from BrickEconomy. ${skipped} already in collection.`);
+      showMessage('success', `Imported ${imported} sets (${dupes} additional copies merged). ${imagesFound} images loaded from Rebrickable.`);
     } catch (err) {
       showMessage('error', err instanceof Error ? err.message : 'Import failed');
     } finally {
