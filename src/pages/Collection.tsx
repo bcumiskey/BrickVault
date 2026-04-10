@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, SlidersHorizontal, PlusCircle, LayoutGrid, List, Package } from 'lucide-react';
+import { Search, SlidersHorizontal, PlusCircle, LayoutGrid, List, Package, CheckSquare, Square, Trash2, X } from 'lucide-react';
 import { storageService } from '@/services/storage';
 import { rebrickableService } from '@/services/rebrickable';
 import type { ThemeResult } from '@/services/rebrickable';
 import CollectionCard from '@/components/CollectionCard';
 import EmptyState from '@/components/EmptyState';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import type { CollectionSet, CollectionMinifigure } from '@/types/lego';
 
 type ViewMode = 'grid' | 'list';
@@ -29,6 +30,14 @@ export default function Collection() {
   const [maxYearFilter, setMaxYearFilter] = useState<string>('');
   const [themes, setThemes] = useState<ThemeResult[]>([]);
 
+  // Bulk edit state
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState<string>('');
+  const [bulkValue, setBulkValue] = useState<string>('');
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkApplying, setBulkApplying] = useState(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -50,9 +59,9 @@ export default function Collection() {
     }
   }
 
-  const filteredItems = useMemo(() => {
-    type TaggedItem = { item: CollectionSet | CollectionMinifigure; type: 'set' | 'minifig'; sortName: string; sortDate: string; sortValue: number };
+  type TaggedItem = { item: CollectionSet | CollectionMinifigure; type: 'set' | 'minifig'; sortName: string; sortDate: string; sortValue: number };
 
+  const filteredItems = useMemo(() => {
     let items: TaggedItem[] = [];
 
     if (filter !== 'minifigs') {
@@ -100,15 +109,15 @@ export default function Collection() {
 
     // Retired filter
     if (retiredFilter === 'retired') {
-      items = items.filter(({ item }) => ('retired' in item) && (item as any).retired === true);
+      items = items.filter(({ item }) => ('retired' in item) && (item as CollectionSet).retired === true);
     } else if (retiredFilter === 'active') {
-      items = items.filter(({ item }) => !('retired' in item) || (item as any).retired !== true);
+      items = items.filter(({ item }) => !('retired' in item) || (item as CollectionSet).retired !== true);
     }
 
     // Category filter (minifigs only)
     if (categoryFilter) {
       items = items.filter(({ item, type }) => {
-        if (type !== 'minifig') return categoryFilter === ''; // hide sets when filtering by category
+        if (type !== 'minifig') return categoryFilter === '';
         return (item as CollectionMinifigure).category === categoryFilter;
       });
     }
@@ -124,7 +133,7 @@ export default function Collection() {
     // Year range filter
     if (minYearFilter || maxYearFilter) {
       items = items.filter(({ item, type }) => {
-        if (type !== 'set') return !minYearFilter && !maxYearFilter; // show minifigs if no year filter
+        if (type !== 'set') return !minYearFilter && !maxYearFilter;
         const year = (item as CollectionSet).set_data.year;
         if (minYearFilter && year < parseInt(minYearFilter)) return false;
         if (maxYearFilter && year > parseInt(maxYearFilter)) return false;
@@ -151,7 +160,87 @@ export default function Collection() {
     return items;
   }, [sets, minifigs, searchQuery, filter, sort, statusFilter, retiredFilter, categoryFilter, themeFilter, minYearFilter, maxYearFilter]);
 
-  const soldCount = sets.filter(s => s.status === 'SOLD').length + minifigs.filter(m => m.status === 'SOLD' as string).length;
+  const soldCount = sets.filter(s => s.status === 'SOLD').length + minifigs.filter(m => m.status === ('SOLD' as string)).length;
+
+  // Bulk edit helpers
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(filteredItems.map(({ item }) => item.id)));
+  }
+
+  function deselectAll() {
+    setSelectedIds(new Set());
+  }
+
+  function exitBulkMode() {
+    setBulkMode(false);
+    setSelectedIds(new Set());
+    setBulkAction('');
+    setBulkValue('');
+  }
+
+  async function applyBulkAction() {
+    if (selectedIds.size === 0) return;
+    setBulkApplying(true);
+    try {
+      for (const { item, type } of filteredItems) {
+        if (!selectedIds.has(item.id)) continue;
+
+        if (type === 'set') {
+          const s = item as CollectionSet;
+          let updated = { ...s };
+          switch (bulkAction) {
+            case 'status': updated.status = bulkValue as CollectionSet['status']; break;
+            case 'retired_true': updated.retired = true; break;
+            case 'retired_false': updated.retired = false; break;
+            case 'storage': updated.storage_location = bulkValue || undefined; break;
+          }
+          await storageService.saveCollectionSet(updated);
+        } else {
+          const m = item as CollectionMinifigure;
+          let updated = { ...m };
+          switch (bulkAction) {
+            case 'status': updated.status = bulkValue as CollectionMinifigure['status']; break;
+            case 'retired_true': updated.retired = true; break;
+            case 'retired_false': updated.retired = false; break;
+            case 'category': updated.category = bulkValue as CollectionMinifigure['category']; break;
+            case 'storage': updated.storage_location = bulkValue || undefined; break;
+          }
+          await storageService.saveCollectionMinifigure(updated);
+        }
+      }
+      await loadData();
+      exitBulkMode();
+    } finally {
+      setBulkApplying(false);
+    }
+  }
+
+  async function bulkDelete() {
+    setBulkApplying(true);
+    try {
+      for (const { item, type } of filteredItems) {
+        if (!selectedIds.has(item.id)) continue;
+        if (type === 'set') {
+          await storageService.deleteCollectionSet(item.id);
+        } else {
+          await storageService.deleteCollectionMinifigure(item.id);
+        }
+      }
+      await loadData();
+      exitBulkMode();
+      setConfirmBulkDelete(false);
+    } finally {
+      setBulkApplying(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -172,14 +261,136 @@ export default function Collection() {
             {sets.length} set{sets.length !== 1 ? 's' : ''}, {minifigs.length} minifigure{minifigs.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <Link
-          to="/add"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-        >
-          <PlusCircle className="w-4 h-4" />
-          Add Item
-        </Link>
+        <div className="flex gap-2">
+          {!isEmpty && (
+            <button
+              onClick={() => bulkMode ? exitBulkMode() : setBulkMode(true)}
+              className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                bulkMode
+                  ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <CheckSquare className="w-4 h-4" />
+              {bulkMode ? 'Cancel' : 'Bulk Edit'}
+            </button>
+          )}
+          <Link
+            to="/add"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+          >
+            <PlusCircle className="w-4 h-4" />
+            Add Item
+          </Link>
+        </div>
       </div>
+
+      {/* Bulk action bar */}
+      {bulkMode && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-indigo-700">
+                {selectedIds.size} selected
+              </span>
+              <button onClick={selectAll} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                Select All ({filteredItems.length})
+              </button>
+              {selectedIds.size > 0 && (
+                <button onClick={deselectAll} className="text-xs text-gray-500 hover:text-gray-700 font-medium">
+                  Deselect All
+                </button>
+              )}
+            </div>
+            <button onClick={exitBulkMode} className="text-gray-400 hover:text-gray-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {selectedIds.size > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {/* Status change */}
+              <div className="flex gap-1">
+                <select
+                  value={bulkAction === 'status' ? bulkValue : ''}
+                  onChange={e => { setBulkAction('status'); setBulkValue(e.target.value); }}
+                  className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+                >
+                  <option value="">Set Status...</option>
+                  <option value="NISB">NISB</option>
+                  <option value="COMPLETE_WITH_BOX">Complete w/ Box</option>
+                  <option value="COMPLETE_NO_BOX">Complete (No Box)</option>
+                  <option value="INCOMPLETE">Incomplete</option>
+                  <option value="PARTS_ONLY">Parts Only</option>
+                  <option value="SOLD">Sold</option>
+                  <option value="COMPLETE">Complete (Fig)</option>
+                </select>
+              </div>
+
+              {/* Category change */}
+              <select
+                value={bulkAction === 'category' ? bulkValue : ''}
+                onChange={e => { setBulkAction('category'); setBulkValue(e.target.value); }}
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+              >
+                <option value="">Set Category...</option>
+                <option value="SET_FIGURE">Set Figure</option>
+                <option value="CMF">CMF</option>
+                <option value="LOOSE">Loose</option>
+              </select>
+
+              {/* Retired toggle */}
+              <button
+                onClick={() => { setBulkAction('retired_true'); setBulkValue(''); }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                  bulkAction === 'retired_true' ? 'bg-red-100 border-red-300 text-red-700' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Mark Retired
+              </button>
+              <button
+                onClick={() => { setBulkAction('retired_false'); setBulkValue(''); }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                  bulkAction === 'retired_false' ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Mark Active
+              </button>
+
+              {/* Storage location */}
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  placeholder="Set storage..."
+                  value={bulkAction === 'storage' ? bulkValue : ''}
+                  onChange={e => { setBulkAction('storage'); setBulkValue(e.target.value); }}
+                  className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs w-32"
+                />
+              </div>
+
+              {/* Apply button */}
+              {bulkAction && (
+                <button
+                  onClick={applyBulkAction}
+                  disabled={bulkApplying}
+                  className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {bulkApplying ? 'Applying...' : `Apply to ${selectedIds.size}`}
+                </button>
+              )}
+
+              {/* Delete */}
+              <button
+                onClick={() => setConfirmBulkDelete(true)}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" />
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {isEmpty ? (
         <EmptyState
@@ -242,11 +453,7 @@ export default function Collection() {
             <div className="bg-white border border-gray-200 rounded-lg p-4 mb-5 flex flex-wrap gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
-                <select
-                  value={filter}
-                  onChange={e => setFilter(e.target.value as ItemFilter)}
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                >
+                <select value={filter} onChange={e => setFilter(e.target.value as ItemFilter)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
                   <option value="all">All</option>
                   <option value="sets">Sets</option>
                   <option value="minifigs">Minifigures</option>
@@ -254,11 +461,7 @@ export default function Collection() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                <select
-                  value={statusFilter}
-                  onChange={e => setStatusFilter(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                >
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
                   <option value="">All Statuses</option>
                   <option value="NISB">NISB</option>
                   <option value="COMPLETE_WITH_BOX">Complete w/ Box</option>
@@ -288,11 +491,7 @@ export default function Collection() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Theme</label>
-                <select
-                  value={themeFilter}
-                  onChange={e => setThemeFilter(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                >
+                <select value={themeFilter} onChange={e => setThemeFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
                   <option value="">All Themes</option>
                   {themes.sort((a, b) => a.name.localeCompare(b.name)).map(t => (
                     <option key={t.id} value={t.id.toString()}>{t.name}</option>
@@ -308,11 +507,7 @@ export default function Collection() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Sort By</label>
-                <select
-                  value={sort}
-                  onChange={e => setSort(e.target.value as SortOption)}
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                >
+                <select value={sort} onChange={e => setSort(e.target.value as SortOption)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
                   <option value="name">Name (A-Z)</option>
@@ -336,7 +531,21 @@ export default function Collection() {
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {filteredItems.map(({ item, type }) => (
-                <CollectionCard key={item.id} item={item} type={type} />
+                <div key={item.id} className="relative">
+                  {bulkMode && (
+                    <button
+                      onClick={() => toggleSelect(item.id)}
+                      className={`absolute top-2 left-2 z-10 w-6 h-6 rounded flex items-center justify-center transition-colors ${
+                        selectedIds.has(item.id)
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-white/80 border border-gray-300 text-gray-400 hover:border-indigo-400'
+                      }`}
+                    >
+                      {selectedIds.has(item.id) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  )}
+                  <CollectionCard item={item} type={type} />
+                </div>
               ))}
             </div>
           ) : (
@@ -348,38 +557,62 @@ export default function Collection() {
                 const image = isSet ? (item as CollectionSet).set_data.set_img_url : (item as CollectionMinifigure).minifig_data.fig_img_url;
 
                 return (
-                  <Link
-                    key={item.id}
-                    to={`/collection/${item.id}?type=${type}`}
-                    className="flex items-center gap-4 bg-white border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow"
-                  >
-                    <div className="w-14 h-14 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                      {image ? (
-                        <img src={image} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
-                      ) : (
-                        <div className="text-gray-300 text-xs">No img</div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
-                      <p className="text-xs text-gray-400 font-mono">{num}</p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <span className={`inline-flex items-center rounded-full text-xs font-medium px-2 py-0.5 ${
-                        item.status === 'NISB' || item.status === 'COMPLETE' ? 'bg-emerald-100 text-emerald-700' :
-                        item.status.includes('COMPLETE') ? 'bg-blue-100 text-blue-700' :
-                        'bg-amber-100 text-amber-700'
-                      }`}>
-                        {item.status.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                  </Link>
+                  <div key={item.id} className="flex items-center gap-2">
+                    {bulkMode && (
+                      <button
+                        onClick={() => toggleSelect(item.id)}
+                        className={`w-6 h-6 rounded flex items-center justify-center flex-shrink-0 transition-colors ${
+                          selectedIds.has(item.id)
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white border border-gray-300 text-gray-400 hover:border-indigo-400'
+                        }`}
+                      >
+                        {selectedIds.has(item.id) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                      </button>
+                    )}
+                    <Link
+                      to={`/collection/${item.id}?type=${type}`}
+                      className="flex-1 flex items-center gap-4 bg-white border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow"
+                    >
+                      <div className="w-14 h-14 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        {image ? (
+                          <img src={image} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
+                        ) : (
+                          <div className="text-gray-300 text-xs">No img</div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
+                        <p className="text-xs text-gray-400 font-mono">{num}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <span className={`inline-flex items-center rounded-full text-xs font-medium px-2 py-0.5 ${
+                          item.status === 'NISB' || item.status === 'COMPLETE' ? 'bg-emerald-100 text-emerald-700' :
+                          item.status.includes('COMPLETE') ? 'bg-blue-100 text-blue-700' :
+                          item.status === 'SOLD' ? 'bg-gray-200 text-gray-500' :
+                          'bg-amber-100 text-amber-700'
+                        }`}>
+                          {item.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    </Link>
+                  </div>
                 );
               })}
             </div>
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title="Delete Selected Items"
+        message={`Are you sure you want to permanently delete ${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''}? This cannot be undone.`}
+        confirmLabel="Delete All"
+        variant="danger"
+        onConfirm={bulkDelete}
+        onCancel={() => setConfirmBulkDelete(false)}
+      />
     </div>
   );
 }
