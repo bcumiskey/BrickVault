@@ -44,8 +44,9 @@ export default function Catalog() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Themes for dropdown
+  // Themes & part categories for dropdowns
   const [themes, setThemes] = useState<ThemeResult[]>([]);
+  const [partCategories, setPartCategories] = useState<Array<{ id: number; name: string; part_count: number }>>([]);
   // Quick-add state
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [ownedSetNums, setOwnedSetNums] = useState<Set<string>>(new Set());
@@ -65,6 +66,9 @@ export default function Catalog() {
   useEffect(() => {
     rebrickableService.getThemes()
       .then(t => setThemes(t))
+      .catch(() => {});
+    rebrickableService.getPartCategories()
+      .then(r => setPartCategories(r.results))
       .catch(() => {});
   }, []);
 
@@ -311,14 +315,14 @@ export default function Catalog() {
         {showFilters && (
           <div className="bg-white border border-gray-200 rounded-xl p-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {/* Search */}
+              {/* Search — all categories */}
               <div className="sm:col-span-2 lg:col-span-1">
                 <label className="block text-xs font-medium text-gray-500 mb-1">Search</label>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Name or number..."
+                    placeholder={category === 'parts' ? 'Part name or number...' : 'Name or number...'}
                     value={pendingFilters.search}
                     onChange={e => setPendingFilters({ ...pendingFilters, search: e.target.value })}
                     onKeyDown={e => e.key === 'Enter' && applyFilters()}
@@ -327,7 +331,7 @@ export default function Catalog() {
                 </div>
               </div>
 
-              {/* Theme (sets only) */}
+              {/* Theme — sets only */}
               {category === 'sets' && (
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Theme</label>
@@ -346,7 +350,26 @@ export default function Catalog() {
                 </div>
               )}
 
-              {/* Year range (sets only) */}
+              {/* Part Category — parts only */}
+              {category === 'parts' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
+                  <select
+                    value={pendingFilters.categoryId}
+                    onChange={e => setPendingFilters({ ...pendingFilters, categoryId: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                  >
+                    <option value="">All Categories</option>
+                    {partCategories.sort((a, b) => a.name.localeCompare(b.name)).map(cat => (
+                      <option key={cat.id} value={cat.id.toString()}>
+                        {cat.name} ({cat.part_count})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Year range — sets only */}
               {category === 'sets' && (
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Year Range</label>
@@ -373,10 +396,12 @@ export default function Catalog() {
                 </div>
               )}
 
-              {/* Parts range */}
+              {/* Parts range — sets and minifigs */}
               {category !== 'parts' && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Parts Range</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    {category === 'minifigs' ? 'Piece Count' : 'Parts Range'}
+                  </label>
                   <div className="flex gap-2">
                     <input
                       type="number"
@@ -398,8 +423,8 @@ export default function Catalog() {
                 </div>
               )}
 
-              {/* Sort */}
-              {category === 'sets' && (
+              {/* Sort — sets and minifigs */}
+              {category !== 'parts' && (
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Sort By</label>
                   <select
@@ -407,12 +432,16 @@ export default function Catalog() {
                     onChange={e => setPendingFilters({ ...pendingFilters, ordering: e.target.value })}
                     className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
                   >
-                    <option value="-year">Year (Newest)</option>
-                    <option value="year">Year (Oldest)</option>
+                    {category === 'sets' && (
+                      <>
+                        <option value="-year">Year (Newest)</option>
+                        <option value="year">Year (Oldest)</option>
+                      </>
+                    )}
                     <option value="name">Name (A-Z)</option>
                     <option value="-name">Name (Z-A)</option>
-                    <option value="-num_parts">Most Parts</option>
-                    <option value="num_parts">Fewest Parts</option>
+                    <option value="-num_parts">Most Pieces</option>
+                    <option value="num_parts">Fewest Pieces</option>
                   </select>
                 </div>
               )}
