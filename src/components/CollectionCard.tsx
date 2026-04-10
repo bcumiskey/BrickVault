@@ -24,11 +24,13 @@ export default function CollectionCard({ item, type }: CollectionCardProps) {
   const quantity = ('quantity' in item) ? (item as any).quantity ?? 1 : 1;
   const minifigCategory = !isSet && minifig ? minifig.category : undefined;
   const parentSetNum = !isSet && minifig ? minifig.parent_set_num : undefined;
+  const isBulkLot = ('acquisitions' in item) && Array.isArray((item as any).acquisitions) && (item as any).acquisitions.some((a: any) => a.source === 'BULK_LOT');
+  const isSold = item.status === 'SOLD';
 
   return (
     <Link
       to={`/collection/${item.id}?type=${type}`}
-      className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:border-gray-300 transition-all group"
+      className={`bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:border-gray-300 transition-all group ${isSold ? 'opacity-60' : ''}`}
     >
       {/* Image */}
       <div className="aspect-square bg-gray-50 flex items-center justify-center p-4 overflow-hidden">
@@ -50,7 +52,7 @@ export default function CollectionCard({ item, type }: CollectionCardProps) {
           <p className="text-xs text-gray-500 font-mono">{itemNum}</p>
           {year && <p className="text-xs text-gray-400">{year}</p>}
         </div>
-        <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 mb-2 leading-snug">
+        <h3 className={`text-sm font-semibold line-clamp-2 mb-2 leading-snug ${isSold ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
           {name}
         </h3>
         <div className="flex items-center flex-wrap gap-1.5 mb-1">
@@ -72,6 +74,11 @@ export default function CollectionCard({ item, type }: CollectionCardProps) {
           {quantity > 1 && (
             <span className="inline-flex items-center rounded-full text-xs font-medium px-2 py-0.5 bg-indigo-50 text-indigo-600">
               ×{quantity}
+            </span>
+          )}
+          {isBulkLot && (
+            <span className="inline-flex items-center rounded-full text-xs font-medium px-2 py-0.5 bg-amber-50 text-amber-600">
+              Bulk Lot
             </span>
           )}
         </div>

@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Search, Filter, ChevronLeft, ChevronRight, CheckCircle2, Package, Users, Puzzle, RotateCcw } from 'lucide-react';
 import { rebrickableService } from '@/services/rebrickable';
-import { storageService } from '@/services/storage';
+import { storageService, enrichSetWithBE } from '@/services/storage';
 import QuickAddForm from '@/components/QuickAddForm';
 import ImageModal from '@/components/ImageModal';
 import type { QuickAddData } from '@/components/QuickAddForm';
 import type { SetResult, MinifigResult, ThemeResult } from '@/services/rebrickable';
-import type { CollectionSet, CollectionMinifigure } from '@/types/lego';
+import type { CollectionSet, CollectionMinifigure, Acquisition } from '@/types/lego';
 
 type Category = 'sets' | 'minifigs' | 'parts';
 
@@ -199,12 +199,13 @@ export default function Catalog() {
         purchase_price: data.purchase_price ? parseFloat(data.purchase_price) : undefined,
         current_value: data.current_value ? parseFloat(data.current_value) : undefined,
         quantity: 1,
-        acquisitions: data.purchase_price ? [{ id: 'acq_' + Date.now(), date: new Date().toISOString().split('T')[0], price: parseFloat(data.purchase_price), source: 'RETAIL' as const }] : [],
+        acquisitions: data.purchase_price ? [{ id: 'acq_' + Date.now(), date: new Date().toISOString().split('T')[0], price: parseFloat(data.purchase_price), source: data.source as Acquisition['source'] }] : [],
         retired: false,
         created_at: now,
         updated_at: now,
       };
-      await storageService.saveCollectionSet(collectionSet);
+      const enrichedSet = await enrichSetWithBE(collectionSet);
+      await storageService.saveCollectionSet(enrichedSet);
 
       // Auto-add minifigures from this set
       try {
@@ -251,7 +252,7 @@ export default function Catalog() {
         current_value: data.current_value ? parseFloat(data.current_value) : undefined,
         source: 'REBRICKABLE',
         quantity: 1,
-        acquisitions: data.purchase_price ? [{ id: 'acq_' + Date.now(), date: new Date().toISOString().split('T')[0], price: parseFloat(data.purchase_price), source: 'RETAIL' as const }] : [],
+        acquisitions: data.purchase_price ? [{ id: 'acq_' + Date.now(), date: new Date().toISOString().split('T')[0], price: parseFloat(data.purchase_price), source: data.source as Acquisition['source'] }] : [],
         category: 'LOOSE' as const,
         retired: false,
         created_at: now,

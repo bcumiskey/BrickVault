@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { Upload, Loader2, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { rebrickableService } from '@/services/rebrickable';
+import { enrichSetWithBE } from '@/services/storage';
 import { storageService } from '@/services/storage';
 import type { CollectionSet } from '@/types/lego';
 
@@ -125,14 +126,21 @@ export default function CsvImporter({ onClose }: { onClose: () => void }) {
           completeness_percentage: defaultStatus === 'NISB' || defaultStatus.startsWith('COMPLETE') ? 100 : 50,
           has_original_box: defaultStatus === 'NISB' || defaultStatus === 'COMPLETE_WITH_BOX',
           has_instructions: defaultStatus !== 'PARTS_ONLY',
-          quantity: 1,
-          acquisitions: [],
+          quantity: row.owned,
+          acquisitions: Array.from({ length: row.owned }, (_, i) => ({
+            id: `acq_csv_${Date.now()}_${i}`,
+            date: new Date().toISOString().split('T')[0],
+            price: undefined,
+            source: 'OTHER' as const,
+            source_detail: 'CSV Import',
+          })),
           retired: false,
           created_at: now,
           updated_at: now,
         };
 
-        await storageService.saveCollectionSet(collectionSet);
+        const enriched = await enrichSetWithBE(collectionSet);
+        await storageService.saveCollectionSet(enriched);
         rows[i] = { ...row, status: 'success', name: setData.name };
         imported++;
         existingNums.add(row.number);

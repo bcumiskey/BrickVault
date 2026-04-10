@@ -3,11 +3,9 @@ import type {
   CollectionMinifigure,
   CollectionMoc,
   PartInventory,
-  StorageLocation,
-  WishlistItem,
-  CustomFieldDefinition,
   CollectionAnalytics,
 } from '@/types/lego';
+import { brickEconomyService } from '@/services/brickeconomy';
 
 // Migration: apply default values for new fields on older data
 function migrateSet(s: Partial<CollectionSet> & { id: string }): CollectionSet {
@@ -110,47 +108,6 @@ class StorageService {
 
   async getPartInventory(): Promise<PartInventory[]> {
     return this.getItems<PartInventory>('part_inventory');
-  }
-
-  // Storage Locations
-  async saveStorageLocation(location: StorageLocation): Promise<void> {
-    const existing = this.getItems<StorageLocation>('storage_locations');
-    const updated = existing.filter(l => l.id !== location.id);
-    updated.push(location);
-    this.setItems('storage_locations', updated);
-  }
-
-  async getStorageLocations(): Promise<StorageLocation[]> {
-    return this.getItems<StorageLocation>('storage_locations');
-  }
-
-  // Wishlist
-  async saveWishlistItem(item: WishlistItem): Promise<void> {
-    const existing = this.getItems<WishlistItem>('wishlist');
-    const updated = existing.filter(w => w.id !== item.id);
-    updated.push(item);
-    this.setItems('wishlist', updated);
-  }
-
-  async getWishlist(): Promise<WishlistItem[]> {
-    return this.getItems<WishlistItem>('wishlist');
-  }
-
-  async deleteWishlistItem(id: string): Promise<void> {
-    const existing = this.getItems<WishlistItem>('wishlist');
-    this.setItems('wishlist', existing.filter(w => w.id !== id));
-  }
-
-  // Custom Field Definitions
-  async saveCustomFieldDefinition(field: CustomFieldDefinition): Promise<void> {
-    const existing = this.getItems<CustomFieldDefinition>('custom_field_definitions');
-    const updated = existing.filter(f => f.id !== field.id);
-    updated.push(field);
-    this.setItems('custom_field_definitions', updated);
-  }
-
-  async getCustomFieldDefinitions(): Promise<CustomFieldDefinition[]> {
-    return this.getItems<CustomFieldDefinition>('custom_field_definitions');
   }
 
   // Cache for API data
@@ -259,3 +216,22 @@ class StorageService {
 }
 
 export const storageService = new StorageService();
+
+// Enrich a CollectionSet with BrickEconomy market data (if API key configured)
+// Returns the enriched set, or the original set unchanged on error/no key
+export async function enrichSetWithBE(set: CollectionSet): Promise<CollectionSet> {
+  if (!brickEconomyService.isConfigured()) return set;
+  try {
+    const beData = await brickEconomyService.getSet(set.set_num);
+    return {
+      ...set,
+      retired: beData.retired ?? set.retired,
+      retirement_year: beData.retired_date ? parseInt(beData.retired_date.split('-')[0]) : set.retirement_year,
+      retail_price: beData.retail_price_us ?? set.retail_price,
+      current_value: beData.current_value_new ?? beData.current_value_used ?? set.current_value,
+    };
+  } catch (e) {
+    console.warn(`BrickEconomy enrichment failed for ${set.set_num}:`, e);
+    return set;
+  }
+}

@@ -4,7 +4,7 @@ import { ChevronLeft, Pencil, Trash2, Save, X, ExternalLink } from 'lucide-react
 import { storageService } from '@/services/storage';
 import StatusBadge from '@/components/StatusBadge';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import type { CollectionSet, CollectionMinifigure } from '@/types/lego';
+import type { CollectionSet, CollectionMinifigure, Acquisition } from '@/types/lego';
 
 export default function ItemDetail() {
   const { id } = useParams<{ id: string }>();
@@ -30,6 +30,22 @@ export default function ItemDetail() {
   const [editNotes, setEditNotes] = useState('');
   const [editRetired, setEditRetired] = useState(false);
   const [editRetirementYear, setEditRetirementYear] = useState('');
+  // Sale tracking
+  const [editSalePrice, setEditSalePrice] = useState('');
+  const [editSaleDate, setEditSaleDate] = useState('');
+  const [editSalePlatform, setEditSalePlatform] = useState('');
+  // Category (minifigs)
+  const [editCategory, setEditCategory] = useState<string>('LOOSE');
+  // Quantity
+  const [editQuantity, setEditQuantity] = useState(1);
+  // Acquisitions
+  const [editAcquisitions, setEditAcquisitions] = useState<Acquisition[]>([]);
+  const [showAcqForm, setShowAcqForm] = useState(false);
+  const [newAcqPrice, setNewAcqPrice] = useState('');
+  const [newAcqSource, setNewAcqSource] = useState<string>('RETAIL');
+  const [newAcqSourceDetail, setNewAcqSourceDetail] = useState('');
+  const [newAcqDate, setNewAcqDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newAcqNotes, setNewAcqNotes] = useState('');
 
   useEffect(() => {
     loadItem();
@@ -70,9 +86,15 @@ export default function ItemDetail() {
       setEditPurchasePrice(m.purchase_price?.toString() || '');
       setEditCurrentValue(m.current_value?.toString() || '');
       setEditStorage(m.storage_location || '');
+      setEditCategory(m.category || 'LOOSE');
     }
     setEditRetired(item.retired ?? false);
     setEditRetirementYear((item as any).retirement_year?.toString() || '');
+    setEditSalePrice((item as any).sale_price?.toString() || '');
+    setEditSaleDate((item as any).sale_date || '');
+    setEditSalePlatform((item as any).sale_platform || '');
+    setEditQuantity((item as any).quantity ?? 1);
+    setEditAcquisitions([...((item as any).acquisitions || [])]);
   }
 
   async function saveChanges() {
@@ -89,6 +111,11 @@ export default function ItemDetail() {
         notes: editNotes || undefined,
         retired: editRetired,
         retirement_year: editRetirementYear ? parseInt(editRetirementYear) : undefined,
+        sale_price: editSalePrice ? parseFloat(editSalePrice) : undefined,
+        sale_date: editSaleDate || undefined,
+        sale_platform: editSalePlatform || undefined,
+        quantity: editQuantity,
+        acquisitions: editAcquisitions,
       };
       await storageService.saveCollectionSet(updated);
       setSet(updated);
@@ -103,6 +130,12 @@ export default function ItemDetail() {
         storage_location: editStorage || undefined,
         notes: editNotes || undefined,
         retired: editRetired,
+        sale_price: editSalePrice ? parseFloat(editSalePrice) : undefined,
+        sale_date: editSaleDate || undefined,
+        sale_platform: editSalePlatform || undefined,
+        quantity: editQuantity,
+        acquisitions: editAcquisitions,
+        category: editCategory as CollectionMinifigure['category'],
       };
       await storageService.saveCollectionMinifigure(updated);
       setMinifig(updated);
@@ -254,6 +287,26 @@ export default function ItemDetail() {
                   </select>
                 )}
               </div>
+              {/* Sale Details (when status is SOLD) */}
+              {editStatus === 'SOLD' && (
+                <div className="bg-gray-50 rounded-lg p-3 space-y-3">
+                  <p className="text-xs font-medium text-gray-500">Sale Details</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">Sale Price ($)</label>
+                      <input type="number" step="0.01" value={editSalePrice} onChange={e => setEditSalePrice(e.target.value)} className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm" placeholder="0.00" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">Sale Date</label>
+                      <input type="date" value={editSaleDate} onChange={e => setEditSaleDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">Platform</label>
+                      <input type="text" value={editSalePlatform} onChange={e => setEditSalePlatform(e.target.value)} className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm" placeholder="eBay, BrickLink..." />
+                    </div>
+                  </div>
+                </div>
+              )}
               {type === 'minifig' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Condition</label>
@@ -266,9 +319,25 @@ export default function ItemDetail() {
                   </select>
                 </div>
               )}
+              {/* Category (minifigs) */}
+              {type === 'minifig' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <select value={editCategory} onChange={e => setEditCategory(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="SET_FIGURE">Set Figure</option>
+                    <option value="CMF">CMF</option>
+                    <option value="LOOSE">Loose</option>
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Completeness: {editCompleteness}%</label>
                 <input type="range" min="0" max="100" step="5" value={editCompleteness} onChange={e => setEditCompleteness(parseInt(e.target.value))} className="w-full accent-indigo-600" />
+              </div>
+              {/* Quantity */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <input type="number" min="1" value={editQuantity} onChange={e => setEditQuantity(parseInt(e.target.value) || 1)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
               </div>
               {/* Retired */}
               <div className="flex items-center gap-3">
@@ -318,6 +387,80 @@ export default function ItemDetail() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                 <textarea rows={3} value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none" />
               </div>
+              {/* Acquisitions Editor */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700">Acquisitions ({editAcquisitions.length})</label>
+                  <button type="button" onClick={() => setShowAcqForm(!showAcqForm)} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+                    {showAcqForm ? 'Cancel' : '+ Add'}
+                  </button>
+                </div>
+                {/* Existing acquisitions */}
+                {editAcquisitions.length > 0 && (
+                  <div className="space-y-1 mb-2">
+                    {editAcquisitions.map((acq, idx) => (
+                      <div key={acq.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1.5 text-xs">
+                        <span>{acq.source?.replace(/_/g, ' ')}{acq.source_detail ? ` (${acq.source_detail})` : ''} {acq.date || ''} {acq.price != null ? `$${acq.price.toFixed(2)}` : ''}</span>
+                        <button type="button" onClick={() => setEditAcquisitions(editAcquisitions.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-700 ml-2">&times;</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* New acquisition form */}
+                {showAcqForm && (
+                  <div className="bg-indigo-50 rounded-lg p-3 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">Date</label>
+                        <input type="date" value={newAcqDate} onChange={e => setNewAcqDate(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1 text-xs" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">Price ($)</label>
+                        <input type="number" step="0.01" value={newAcqPrice} onChange={e => setNewAcqPrice(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1 text-xs" placeholder="0.00" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">Source</label>
+                        <select value={newAcqSource} onChange={e => setNewAcqSource(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1 text-xs">
+                          <option value="RETAIL">Retail</option>
+                          <option value="GIFT">Gift</option>
+                          <option value="BULK_LOT">Bulk Lot</option>
+                          <option value="SECONDHAND">Secondhand</option>
+                          <option value="TRADE">Trade</option>
+                          <option value="OTHER">Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">Detail</label>
+                        <input type="text" value={newAcqSourceDetail} onChange={e => setNewAcqSourceDetail(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1 text-xs" placeholder="eBay, gift from..." />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">Notes</label>
+                      <input type="text" value={newAcqNotes} onChange={e => setNewAcqNotes(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1 text-xs" placeholder="Optional notes" />
+                    </div>
+                    <button type="button" onClick={() => {
+                      setEditAcquisitions([...editAcquisitions, {
+                        id: `acq_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                        date: newAcqDate || undefined,
+                        price: newAcqPrice ? parseFloat(newAcqPrice) : undefined,
+                        source: newAcqSource as Acquisition['source'],
+                        source_detail: newAcqSourceDetail || undefined,
+                        notes: newAcqNotes || undefined,
+                      }]);
+                      setShowAcqForm(false);
+                      setNewAcqPrice('');
+                      setNewAcqSource('RETAIL');
+                      setNewAcqSourceDetail('');
+                      setNewAcqDate(new Date().toISOString().split('T')[0]);
+                      setNewAcqNotes('');
+                    }} className="w-full px-2 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded hover:bg-indigo-700">
+                      Add Acquisition
+                    </button>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             /* View Mode */
@@ -348,6 +491,17 @@ export default function ItemDetail() {
                   />
                 )}
               </div>
+              {/* Sale Info */}
+              {item.status === 'SOLD' && (
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs font-medium text-gray-500 mb-2">Sale Details</p>
+                  <div className="grid grid-cols-3 gap-4">
+                    {(item as any).sale_price != null && <InfoRow label="Sale Price" value={`$${(item as any).sale_price.toFixed(2)}`} />}
+                    {(item as any).sale_date && <InfoRow label="Sale Date" value={(item as any).sale_date} />}
+                    {(item as any).sale_platform && <InfoRow label="Platform" value={(item as any).sale_platform} />}
+                  </div>
+                </div>
+              )}
               {(type === 'set' ? set!.storage_location : minifig!.storage_location) && (
                 <InfoRow label="Storage Location" value={(type === 'set' ? set!.storage_location : minifig!.storage_location)!} />
               )}
@@ -381,6 +535,10 @@ export default function ItemDetail() {
               {/* Quantity */}
               {(('quantity' in item) && (item as any).quantity > 1) && (
                 <InfoRow label="Quantity" value={`${(item as any).quantity} copies`} />
+              )}
+              {/* Bulk Lot indicator */}
+              {item.acquisitions && item.acquisitions.some((a: any) => a.source === 'BULK_LOT') && (
+                <span className="inline-flex items-center rounded-full text-xs font-medium px-2.5 py-1 bg-amber-100 text-amber-700">Bulk Lot</span>
               )}
               {/* Retired badge */}
               {item.retired && (

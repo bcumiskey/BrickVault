@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Package, Users, Loader2, ChevronLeft, Plus } from 'lucide-react';
 import { rebrickableService } from '@/services/rebrickable';
-import { storageService } from '@/services/storage';
+import { storageService, enrichSetWithBE } from '@/services/storage';
 import type { CollectionSet, CollectionMinifigure } from '@/types/lego';
 
 type Category = 'sets' | 'minifigs';
@@ -147,7 +147,8 @@ export default function AddItem() {
           created_at: now,
           updated_at: now,
         };
-        await storageService.saveCollectionSet(collectionSet);
+        const enrichedSet = await enrichSetWithBE(collectionSet);
+        await storageService.saveCollectionSet(enrichedSet);
 
         // Auto-add minifigures from this set
         try {

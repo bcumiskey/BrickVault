@@ -14,6 +14,7 @@ export interface QuickAddData {
   condition: string;
   purchase_price: string;
   current_value: string;
+  source: string;
 }
 
 const defaultData: QuickAddData = {
@@ -21,6 +22,7 @@ const defaultData: QuickAddData = {
   condition: 'GOOD',
   purchase_price: '',
   current_value: '',
+  source: 'RETAIL',
 };
 
 export default function QuickAddForm({ category, onConfirm, onCancel }: QuickAddFormProps) {
@@ -113,6 +115,23 @@ export default function QuickAddForm({ category, onConfirm, onCancel }: QuickAdd
             className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white"
           />
         </div>
+      </div>
+
+      {/* Source */}
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-0.5">Source</label>
+        <select
+          value={data.source}
+          onChange={e => setData({ ...data, source: e.target.value })}
+          className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+        >
+          <option value="RETAIL">Retail</option>
+          <option value="GIFT">Gift</option>
+          <option value="BULK_LOT">Bulk Lot</option>
+          <option value="SECONDHAND">Secondhand</option>
+          <option value="TRADE">Trade</option>
+          <option value="OTHER">Other</option>
+        </select>
       </div>
 
       {/* Actions */}

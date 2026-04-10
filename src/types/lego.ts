@@ -112,6 +112,9 @@ export interface CollectionSet {
   retired: boolean;
   retirement_year?: number;
   retail_price?: number;
+  sale_price?: number;
+  sale_date?: string;
+  sale_platform?: string;
   created_at: string;
   updated_at: string;
 }
@@ -120,7 +123,7 @@ export interface CollectionMinifigure {
   id: string;
   fig_num: string;
   minifig_data: LegoMinifigure;
-  status: 'COMPLETE' | 'INCOMPLETE' | 'PARTS_ONLY';
+  status: 'COMPLETE' | 'INCOMPLETE' | 'PARTS_ONLY' | 'SOLD';
   completeness_percentage: number;
   storage_location?: string;
   condition: 'NEW' | 'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR';
@@ -139,6 +142,9 @@ export interface CollectionMinifigure {
   parent_set_id?: string;
   parent_set_num?: string;
   retired: boolean;
+  sale_price?: number;
+  sale_date?: string;
+  sale_platform?: string;
   created_at: string;
   updated_at: string;
 }

@@ -2,6 +2,8 @@ import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, SlidersHorizontal, PlusCircle, LayoutGrid, List, Package } from 'lucide-react';
 import { storageService } from '@/services/storage';
+import { rebrickableService } from '@/services/rebrickable';
+import type { ThemeResult } from '@/services/rebrickable';
 import CollectionCard from '@/components/CollectionCard';
 import EmptyState from '@/components/EmptyState';
 import type { CollectionSet, CollectionMinifigure } from '@/types/lego';
@@ -22,9 +24,17 @@ export default function Collection() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [retiredFilter, setRetiredFilter] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [themeFilter, setThemeFilter] = useState<string>('');
+  const [minYearFilter, setMinYearFilter] = useState<string>('');
+  const [maxYearFilter, setMaxYearFilter] = useState<string>('');
+  const [themes, setThemes] = useState<ThemeResult[]>([]);
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  useEffect(() => {
+    rebrickableService.getThemes().then(setThemes).catch(() => {});
   }, []);
 
   async function loadData() {
@@ -103,6 +113,25 @@ export default function Collection() {
       });
     }
 
+    // Theme filter
+    if (themeFilter) {
+      items = items.filter(({ item, type }) => {
+        if (type !== 'set') return false;
+        return (item as CollectionSet).set_data.theme_id.toString() === themeFilter;
+      });
+    }
+
+    // Year range filter
+    if (minYearFilter || maxYearFilter) {
+      items = items.filter(({ item, type }) => {
+        if (type !== 'set') return !minYearFilter && !maxYearFilter; // show minifigs if no year filter
+        const year = (item as CollectionSet).set_data.year;
+        if (minYearFilter && year < parseInt(minYearFilter)) return false;
+        if (maxYearFilter && year > parseInt(maxYearFilter)) return false;
+        return true;
+      });
+    }
+
     // Sort
     switch (sort) {
       case 'newest':
@@ -120,7 +149,9 @@ export default function Collection() {
     }
 
     return items;
-  }, [sets, minifigs, searchQuery, filter, sort, statusFilter, retiredFilter, categoryFilter]);
+  }, [sets, minifigs, searchQuery, filter, sort, statusFilter, retiredFilter, categoryFilter, themeFilter, minYearFilter, maxYearFilter]);
+
+  const soldCount = sets.filter(s => s.status === 'SOLD').length + minifigs.filter(m => m.status === 'SOLD' as string).length;
 
   if (loading) {
     return (
@@ -256,6 +287,26 @@ export default function Collection() {
                 </select>
               </div>
               <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Theme</label>
+                <select
+                  value={themeFilter}
+                  onChange={e => setThemeFilter(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                >
+                  <option value="">All Themes</option>
+                  {themes.sort((a, b) => a.name.localeCompare(b.name)).map(t => (
+                    <option key={t.id} value={t.id.toString()}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Year</label>
+                <div className="flex gap-1">
+                  <input type="number" placeholder="From" min="1949" value={minYearFilter} onChange={e => setMinYearFilter(e.target.value)} className="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+                  <input type="number" placeholder="To" min="1949" value={maxYearFilter} onChange={e => setMaxYearFilter(e.target.value)} className="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+                </div>
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Sort By</label>
                 <select
                   value={sort}
@@ -273,6 +324,9 @@ export default function Collection() {
 
           {/* Results count */}
           <p className="text-xs text-gray-400 mb-3">{filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}</p>
+          {!statusFilter && soldCount > 0 && (
+            <p className="text-xs text-gray-400 mb-3">Hiding {soldCount} sold item{soldCount !== 1 ? 's' : ''}</p>
+          )}
 
           {/* Grid / List */}
           {filteredItems.length === 0 ? (
