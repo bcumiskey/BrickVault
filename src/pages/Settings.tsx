@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Key, Download, Upload, Trash2, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, RefreshCw, CloudDownload, Database } from 'lucide-react';
+import { Key, Download, Upload, Trash2, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, RefreshCw, CloudDownload, Database, ImageIcon } from 'lucide-react';
 import { rebrickableService } from '@/services/rebrickable';
 import { brickEconomyService } from '@/services/brickeconomy';
 import { storageService } from '@/services/storage';
@@ -20,6 +20,8 @@ export default function Settings() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [showCsvImporter, setShowCsvImporter] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [fetchingImages, setFetchingImages] = useState(false);
+  const [imageProgress, setImageProgress] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -447,6 +449,59 @@ export default function Settings() {
             <div>
               <p className="text-sm font-medium text-gray-900">{syncing ? 'Syncing...' : 'Sync to Database'}</p>
               <p className="text-xs text-gray-500">Push local data to Neon Postgres for cross-browser persistence</p>
+            </div>
+          </button>
+
+          {/* Fetch Missing Images */}
+          <button
+            onClick={async () => {
+              setFetchingImages(true);
+              setImageProgress('Loading collection...');
+              try {
+                const allSets = await storageService.getCollectionSets();
+                const needImages = allSets.filter(s => !s.set_data.set_img_url);
+                if (needImages.length === 0) {
+                  showMessage('success', 'All sets already have images!');
+                  setFetchingImages(false);
+                  setImageProgress('');
+                  return;
+                }
+                let found = 0;
+                let notFound = 0;
+                for (let i = 0; i < needImages.length; i++) {
+                  const s = needImages[i];
+                  setImageProgress(`Fetching ${i + 1}/${needImages.length}: ${s.set_data.name}...`);
+                  try {
+                    const rbData = await rebrickableService.getSet(s.set_num);
+                    if (rbData.set_img_url) {
+                      await storageService.saveCollectionSet({
+                        ...s,
+                        set_data: { ...s.set_data, set_img_url: rbData.set_img_url ?? undefined, set_url: rbData.set_url, theme_id: rbData.theme_id || s.set_data.theme_id },
+                      });
+                      found++;
+                    } else {
+                      notFound++;
+                    }
+                  } catch {
+                    notFound++;
+                  }
+                  if (i < needImages.length - 1) await new Promise(r => setTimeout(r, 200));
+                }
+                showMessage('success', `Found images for ${found} sets. ${notFound} still missing (may not be on Rebrickable).`);
+              } catch (err) {
+                showMessage('error', err instanceof Error ? err.message : 'Image fetch failed');
+              } finally {
+                setFetchingImages(false);
+                setImageProgress('');
+              }
+            }}
+            disabled={fetchingImages}
+            className="w-full flex items-center gap-3 px-4 py-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left disabled:opacity-50"
+          >
+            <ImageIcon className={`w-5 h-5 text-gray-400 ${fetchingImages ? 'animate-pulse' : ''}`} />
+            <div>
+              <p className="text-sm font-medium text-gray-900">{fetchingImages ? 'Fetching Images...' : 'Fetch Missing Images'}</p>
+              <p className="text-xs text-gray-500">{fetchingImages ? imageProgress : 'Look up images from Rebrickable for sets that are missing them'}</p>
             </div>
           </button>
 
