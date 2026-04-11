@@ -17,6 +17,7 @@ const statusColors: Record<string, string> = {
   IN_PROGRESS: 'bg-blue-100 text-blue-700',
   COMPLETED: 'bg-emerald-100 text-emerald-700',
   ON_HOLD: 'bg-gray-100 text-gray-600',
+  SEALED_IN_SET: 'bg-indigo-100 text-indigo-700',
   SOLD: 'bg-gray-200 text-gray-500',
   // Conditions
   NEW: 'bg-emerald-100 text-emerald-700',
@@ -32,6 +33,7 @@ const statusLabels: Record<string, string> = {
   COMPLETE_NO_BOX: 'Complete (No Box)',
   INCOMPLETE: 'Incomplete',
   PARTS_ONLY: 'Parts Only',
+  SEALED_IN_SET: 'Sealed in Set',
   SOLD: 'Sold',
   COMPLETE: 'Complete',
   PLANNED: 'Planned',

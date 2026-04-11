@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Package, Users, Loader2, ChevronLeft, Plus } from 'lucide-react';
 import { rebrickableService } from '@/services/rebrickable';
 import { storageService, enrichSetWithBE } from '@/services/storage';
+import { autoAddMinifigsFromSet } from '@/services/minifigHelper';
 import type { CollectionSet, CollectionMinifigure } from '@/types/lego';
 
 type Category = 'sets' | 'minifigs';
@@ -151,41 +152,7 @@ export default function AddItem() {
         await storageService.saveCollectionSet(enrichedSet);
 
         // Auto-add minifigures from this set
-        try {
-          const minifigResp = await rebrickableService.getSetMinifigs(raw.set_num);
-          const existingMinifigs = await storageService.getCollectionMinifigures();
-          const existingFigNums = new Set(existingMinifigs.map(m => m.fig_num));
-          let addedCount = 0;
-          for (const mf of minifigResp.results) {
-            if (existingFigNums.has(mf.set_num)) continue;
-            const minifig: CollectionMinifigure = {
-              id: `fig_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-              fig_num: mf.set_num,
-              minifig_data: {
-                fig_num: mf.set_num,
-                name: mf.set_name,
-                num_parts: 0,
-                fig_img_url: mf.set_img_url ?? undefined,
-              },
-              status: 'COMPLETE',
-              completeness_percentage: 100,
-              condition: 'GOOD',
-              source: 'REBRICKABLE',
-              quantity: mf.quantity,
-              acquisitions: [],
-              category: 'SET_FIGURE',
-              parent_set_id: collectionSet.id,
-              parent_set_num: collectionSet.set_num,
-              retired: false,
-              created_at: now,
-              updated_at: now,
-            };
-            await storageService.saveCollectionMinifigure(minifig);
-            addedCount++;
-          }
-        } catch (e) {
-          console.warn('Could not auto-add minifigures:', e);
-        }
+        await autoAddMinifigsFromSet(enrichedSet);
       } else {
         const raw = selectedItem.raw as {
           set_num: string; name: string; num_parts: number;

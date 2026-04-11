@@ -123,7 +123,7 @@ export interface CollectionMinifigure {
   id: string;
   fig_num: string;
   minifig_data: LegoMinifigure;
-  status: 'COMPLETE' | 'INCOMPLETE' | 'PARTS_ONLY' | 'SOLD';
+  status: 'COMPLETE' | 'INCOMPLETE' | 'PARTS_ONLY' | 'SOLD' | 'SEALED_IN_SET';
   completeness_percentage: number;
   storage_location?: string;
   condition: 'NEW' | 'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR';

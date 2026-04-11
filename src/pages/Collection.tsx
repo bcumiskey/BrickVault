@@ -483,6 +483,7 @@ export default function Collection() {
                   <option value="PARTS_ONLY">Parts Only</option>
                   <option value="SOLD">Sold</option>
                   <option value="COMPLETE">Complete (Minifig)</option>
+                  <option value="SEALED_IN_SET">Sealed in Set</option>
                 </select>
               </div>
               <div>

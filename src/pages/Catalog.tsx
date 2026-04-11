@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Search, Filter, ChevronLeft, ChevronRight, CheckCircle2, Package, Users, Puzzle, RotateCcw } from 'lucide-react';
 import { rebrickableService } from '@/services/rebrickable';
 import { storageService, enrichSetWithBE } from '@/services/storage';
+import { autoAddMinifigsFromSet } from '@/services/minifigHelper';
 import QuickAddForm from '@/components/QuickAddForm';
 import ImageModal from '@/components/ImageModal';
 import type { QuickAddData } from '@/components/QuickAddForm';
@@ -212,31 +213,7 @@ export default function Catalog() {
       await storageService.saveCollectionSet(enrichedSet);
 
       // Auto-add minifigures from this set
-      try {
-        const minifigResp = await rebrickableService.getSetMinifigs(s.set_num);
-        const existingMinifigs = await storageService.getCollectionMinifigures();
-        const existingFigNums = new Set(existingMinifigs.map(m => m.fig_num));
-        for (const mf of minifigResp.results) {
-          if (existingFigNums.has(mf.set_num)) continue;
-          await storageService.saveCollectionMinifigure({
-            id: `fig_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            fig_num: mf.set_num,
-            minifig_data: { fig_num: mf.set_num, name: mf.set_name, num_parts: 0, fig_img_url: mf.set_img_url ?? undefined },
-            status: 'COMPLETE',
-            completeness_percentage: 100,
-            condition: 'GOOD',
-            source: 'REBRICKABLE',
-            quantity: mf.quantity,
-            acquisitions: [],
-            category: 'SET_FIGURE' as const,
-            parent_set_id: id,
-            parent_set_num: s.set_num,
-            retired: false,
-            created_at: now,
-            updated_at: now,
-          });
-        }
-      } catch (e) { console.warn('Could not auto-add minifigures:', e); }
+      await autoAddMinifigsFromSet(enrichedSet);
     } else {
       const m = item as MinifigResult;
       const collectionMinifig: CollectionMinifigure = {

@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { Key, Download, Upload, Trash2, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, RefreshCw, CloudDownload, Database, ImageIcon } from 'lucide-react';
+import { Key, Download, Upload, Trash2, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, RefreshCw, CloudDownload, Database, ImageIcon, Users } from 'lucide-react';
 import { rebrickableService } from '@/services/rebrickable';
 import { brickEconomyService } from '@/services/brickeconomy';
 import { storageService } from '@/services/storage';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import CsvImporter from '@/components/CsvImporter';
 import type { CollectionSet } from '@/types/lego';
+import { autoAddMinifigsFromSet } from '@/services/minifigHelper';
 
 export default function Settings() {
   const [apiKey, setApiKey] = useState('');
@@ -22,6 +23,8 @@ export default function Settings() {
   const [syncing, setSyncing] = useState(false);
   const [fetchingImages, setFetchingImages] = useState(false);
   const [imageProgress, setImageProgress] = useState('');
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -542,6 +545,56 @@ export default function Settings() {
             <div>
               <p className="text-sm font-medium text-gray-900">Fix Missing Prices</p>
               <p className="text-xs text-gray-500">Copy retail price to purchase price for sets that have no paid amount</p>
+            </div>
+          </button>
+
+          {/* Backfill Minifigures */}
+          <button
+            onClick={async () => {
+              setBackfilling(true);
+              setBackfillProgress('Loading collection...');
+              try {
+                const allSets = await storageService.getCollectionSets();
+                const allMinifigs = await storageService.getCollectionMinifigures();
+                // Find sets that have no minifigs linked to them
+                const setsWithFigs = new Set(allMinifigs.map(m => m.parent_set_id).filter(Boolean));
+                const setsNeedingFigs = allSets.filter(s => !setsWithFigs.has(s.id));
+
+                if (setsNeedingFigs.length === 0) {
+                  showMessage('success', 'All sets already have minifigures cataloged!');
+                  setBackfilling(false);
+                  setBackfillProgress('');
+                  return;
+                }
+
+                let totalAdded = 0;
+                let setsProcessed = 0;
+                for (let i = 0; i < setsNeedingFigs.length; i++) {
+                  const s = setsNeedingFigs[i];
+                  setBackfillProgress(`${i + 1}/${setsNeedingFigs.length}: ${s.set_data.name}...`);
+                  const added = await autoAddMinifigsFromSet(s);
+                  totalAdded += added;
+                  setsProcessed++;
+                  // Rate limit Rebrickable calls
+                  if (i < setsNeedingFigs.length - 1) {
+                    await new Promise(r => setTimeout(r, 250));
+                  }
+                }
+                showMessage('success', `Backfill complete: added ${totalAdded} minifigures from ${setsProcessed} sets.`);
+              } catch (err) {
+                showMessage('error', err instanceof Error ? err.message : 'Backfill failed');
+              } finally {
+                setBackfilling(false);
+                setBackfillProgress('');
+              }
+            }}
+            disabled={backfilling || fetchingImages}
+            className="w-full flex items-center gap-3 px-4 py-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left disabled:opacity-50"
+          >
+            <Users className={`w-5 h-5 text-purple-500 ${backfilling ? 'animate-pulse' : ''}`} />
+            <div>
+              <p className="text-sm font-medium text-gray-900">{backfilling ? 'Backfilling...' : 'Backfill Minifigures'}</p>
+              <p className="text-xs text-gray-500">{backfilling ? backfillProgress : 'Add minifigures from Rebrickable for all sets that don\'t have them yet'}</p>
             </div>
           </button>
 
