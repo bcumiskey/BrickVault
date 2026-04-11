@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Search, SlidersHorizontal, PlusCircle, LayoutGrid, List, Package, CheckSquare, Square, Trash2, X } from 'lucide-react';
 import { storageService } from '@/services/storage';
 import { rebrickableService } from '@/services/rebrickable';
@@ -11,24 +11,48 @@ import type { CollectionSet, CollectionMinifigure } from '@/types/lego';
 
 type ViewMode = 'grid' | 'list';
 type ItemFilter = 'all' | 'sets' | 'minifigs';
-type SortOption = 'newest' | 'oldest' | 'name' | 'value';
+type SortOption = 'newest' | 'oldest' | 'name' | 'value' | 'profit_high' | 'profit_low';
 
 export default function Collection() {
+  // Persist filter state in URL so back-navigation restores it
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [sets, setSets] = useState<CollectionSet[]>([]);
   const [minifigs, setMinifigs] = useState<CollectionMinifigure[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<ItemFilter>('sets');
-  const [sort, setSort] = useState<SortOption>('newest');
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [showFilters, setShowFilters] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [retiredFilter, setRetiredFilter] = useState<string>('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('');
-  const [themeFilter, setThemeFilter] = useState<string>('');
-  const [minYearFilter, setMinYearFilter] = useState<string>('');
-  const [maxYearFilter, setMaxYearFilter] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
+  const [filter, setFilter] = useState<ItemFilter>((searchParams.get('tab') as ItemFilter) || 'sets');
+  const [sort, setSort] = useState<SortOption>((searchParams.get('sort') as SortOption) || 'newest');
+  const [viewMode, setViewMode] = useState<ViewMode>((searchParams.get('view') as ViewMode) || 'grid');
+  const [showFilters, setShowFilters] = useState(!!searchParams.get('filters'));
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || '');
+  const [retiredFilter, setRetiredFilter] = useState<string>(searchParams.get('retired') || '');
+  const [categoryFilter, setCategoryFilter] = useState<string>(searchParams.get('category') || '');
+  const [themeFilter, setThemeFilter] = useState<string>(searchParams.get('theme') || '');
+  const [minYearFilter, setMinYearFilter] = useState<string>(searchParams.get('minYear') || '');
+  const [maxYearFilter, setMaxYearFilter] = useState<string>(searchParams.get('maxYear') || '');
   const [themes, setThemes] = useState<ThemeResult[]>([]);
+
+  // Sync filter state to URL params (debounced via useEffect)
+  const syncParams = useCallback(() => {
+    const params: Record<string, string> = {};
+    if (filter !== 'sets') params.tab = filter;
+    if (searchQuery) params.q = searchQuery;
+    if (sort !== 'newest') params.sort = sort;
+    if (viewMode !== 'grid') params.view = viewMode;
+    if (showFilters) params.filters = '1';
+    if (statusFilter) params.status = statusFilter;
+    if (retiredFilter) params.retired = retiredFilter;
+    if (categoryFilter) params.category = categoryFilter;
+    if (themeFilter) params.theme = themeFilter;
+    if (minYearFilter) params.minYear = minYearFilter;
+    if (maxYearFilter) params.maxYear = maxYearFilter;
+    setSearchParams(params, { replace: true });
+  }, [filter, searchQuery, sort, viewMode, showFilters, statusFilter, retiredFilter, categoryFilter, themeFilter, minYearFilter, maxYearFilter, setSearchParams]);
+
+  useEffect(() => {
+    syncParams();
+  }, [syncParams]);
 
   // Bulk edit state
   const [bulkMode, setBulkMode] = useState(false);
@@ -59,7 +83,7 @@ export default function Collection() {
     }
   }
 
-  type TaggedItem = { item: CollectionSet | CollectionMinifigure; type: 'set' | 'minifig'; sortName: string; sortDate: string; sortValue: number };
+  type TaggedItem = { item: CollectionSet | CollectionMinifigure; type: 'set' | 'minifig'; sortName: string; sortDate: string; sortValue: number; sortProfit: number };
 
   const filteredItems = useMemo(() => {
     let items: TaggedItem[] = [];
@@ -72,6 +96,7 @@ export default function Collection() {
           sortName: s.set_data.name.toLowerCase(),
           sortDate: s.created_at,
           sortValue: s.current_value ?? 0,
+          sortProfit: (s.current_value ?? 0) - (s.purchase_price ?? 0),
         }))
       );
     }
@@ -83,6 +108,7 @@ export default function Collection() {
           sortName: m.minifig_data.name.toLowerCase(),
           sortDate: m.created_at,
           sortValue: m.current_value ?? 0,
+          sortProfit: (m.current_value ?? 0) - (m.purchase_price ?? 0),
         }))
       );
     }
@@ -154,6 +180,12 @@ export default function Collection() {
         break;
       case 'value':
         items.sort((a, b) => b.sortValue - a.sortValue);
+        break;
+      case 'profit_high':
+        items.sort((a, b) => b.sortProfit - a.sortProfit);
+        break;
+      case 'profit_low':
+        items.sort((a, b) => a.sortProfit - b.sortProfit);
         break;
     }
 
@@ -526,6 +558,8 @@ export default function Collection() {
                   <option value="oldest">Oldest First</option>
                   <option value="name">Name (A-Z)</option>
                   <option value="value">Value (High-Low)</option>
+                  <option value="profit_high">Profit (High-Low)</option>
+                  <option value="profit_low">Profit (Low-High)</option>
                 </select>
               </div>
             </div>
