@@ -127,10 +127,10 @@ export default function Settings() {
             quantity: (existing.quantity || 1) + 1,
             acquisitions: [
               ...(existing.acquisitions || []),
-              ...(beSet.paid_price ? [{
+              ...((beSet.paid_price ?? beSet.retail_price) ? [{
                 id: `acq_be_${Date.now()}_${Math.random().toString(36).slice(2, 4)}`,
                 date: beSet.aquired_date,
-                price: beSet.paid_price,
+                price: beSet.paid_price ?? beSet.retail_price,
                 source: 'RETAIL' as const,
                 source_detail: 'Imported from BrickEconomy (additional copy)',
               }] : []),
@@ -157,16 +157,16 @@ export default function Settings() {
           completeness_percentage: beSet.condition?.includes('incomplete') ? 50 : 100,
           has_original_box: beSet.condition === 'new' || beSet.condition === 'used_as_new',
           has_instructions: beSet.condition !== 'used_incomplete',
-          purchase_price: beSet.paid_price,
+          purchase_price: beSet.paid_price ?? beSet.retail_price,
           current_value: beSet.current_value,
           retail_price: beSet.retail_price,
           retired: beSet.retired ?? false,
           retirement_year: beSet.retired_date ? parseInt(beSet.retired_date.split('-')[0]) : undefined,
           quantity: 1,
-          acquisitions: beSet.paid_price ? [{
+          acquisitions: (beSet.paid_price ?? beSet.retail_price) ? [{
             id: `acq_be_${Date.now()}`,
             date: beSet.aquired_date,
-            price: beSet.paid_price,
+            price: beSet.paid_price ?? beSet.retail_price,
             source: 'RETAIL' as const,
             source_detail: 'Imported from BrickEconomy',
           }] : [],
