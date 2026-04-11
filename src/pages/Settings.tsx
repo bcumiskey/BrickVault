@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Key, Download, Upload, Trash2, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, RefreshCw, CloudDownload } from 'lucide-react';
+import { Key, Download, Upload, Trash2, CheckCircle, AlertCircle, Loader2, FileSpreadsheet, RefreshCw, CloudDownload, Database } from 'lucide-react';
 import { rebrickableService } from '@/services/rebrickable';
 import { brickEconomyService } from '@/services/brickeconomy';
 import { storageService } from '@/services/storage';
@@ -19,6 +19,7 @@ export default function Settings() {
   const [importProgress, setImportProgress] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
   const [showCsvImporter, setShowCsvImporter] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -424,6 +425,31 @@ export default function Settings() {
       <section className="bg-white rounded-xl border border-gray-200 p-5">
         <h2 className="text-sm font-semibold text-gray-900 mb-4">Data Management</h2>
         <div className="space-y-3">
+          {/* Sync to Database */}
+          <button
+            onClick={async () => {
+              setSyncing(true);
+              try {
+                // Run migration first
+                await fetch('/api/migrate');
+                const result = await storageService.syncToDatabase();
+                showMessage('success', `Synced to database: ${result.sets} sets, ${result.minifigs} minifigures`);
+              } catch (err) {
+                showMessage('error', err instanceof Error ? err.message : 'Sync failed');
+              } finally {
+                setSyncing(false);
+              }
+            }}
+            disabled={syncing}
+            className="w-full flex items-center gap-3 px-4 py-3 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors text-left disabled:opacity-50"
+          >
+            <Database className={`w-5 h-5 text-indigo-500 ${syncing ? 'animate-pulse' : ''}`} />
+            <div>
+              <p className="text-sm font-medium text-gray-900">{syncing ? 'Syncing...' : 'Sync to Database'}</p>
+              <p className="text-xs text-gray-500">Push local data to Neon Postgres for cross-browser persistence</p>
+            </div>
+          </button>
+
           {/* Export */}
           <button
             onClick={exportData}
