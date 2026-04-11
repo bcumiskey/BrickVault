@@ -555,32 +555,30 @@ export default function Settings() {
               setBackfillProgress('Loading collection...');
               try {
                 const allSets = await storageService.getCollectionSets();
-                const allMinifigs = await storageService.getCollectionMinifigures();
-                // Find sets that have no minifigs linked to them
-                const setsWithFigs = new Set(allMinifigs.map(m => m.parent_set_id).filter(Boolean));
-                const setsNeedingFigs = allSets.filter(s => !setsWithFigs.has(s.id));
-
-                if (setsNeedingFigs.length === 0) {
-                  showMessage('success', 'All sets already have minifigures cataloged!');
-                  setBackfilling(false);
-                  setBackfillProgress('');
-                  return;
-                }
 
                 let totalAdded = 0;
-                let setsProcessed = 0;
-                for (let i = 0; i < setsNeedingFigs.length; i++) {
-                  const s = setsNeedingFigs[i];
-                  setBackfillProgress(`${i + 1}/${setsNeedingFigs.length}: ${s.set_data.name}...`);
-                  const added = await autoAddMinifigsFromSet(s);
-                  totalAdded += added;
-                  setsProcessed++;
-                  // Rate limit Rebrickable calls
-                  if (i < setsNeedingFigs.length - 1) {
-                    await new Promise(r => setTimeout(r, 250));
+                let setsWithFigs = 0;
+                let errors = 0;
+                for (let i = 0; i < allSets.length; i++) {
+                  const s = allSets[i];
+                  if (i % 5 === 0) {
+                    setBackfillProgress(`${i + 1}/${allSets.length}: ${s.set_data.name}... (${totalAdded} figs added)`);
+                  }
+                  try {
+                    const added = await autoAddMinifigsFromSet(s, { skipPartLookup: true });
+                    if (added > 0) {
+                      totalAdded += added;
+                      setsWithFigs++;
+                    }
+                  } catch {
+                    errors++;
+                  }
+                  // Rate limit — 150ms between sets (fast but respectful)
+                  if (i < allSets.length - 1) {
+                    await new Promise(r => setTimeout(r, 150));
                   }
                 }
-                showMessage('success', `Backfill complete: added ${totalAdded} minifigures from ${setsProcessed} sets.`);
+                showMessage('success', `Backfill complete: ${totalAdded} minifigures added/updated across ${setsWithFigs} sets.${errors > 0 ? ` ${errors} errors.` : ''}`);
               } catch (err) {
                 showMessage('error', err instanceof Error ? err.message : 'Backfill failed');
               } finally {
@@ -594,7 +592,7 @@ export default function Settings() {
             <Users className={`w-5 h-5 text-purple-500 ${backfilling ? 'animate-pulse' : ''}`} />
             <div>
               <p className="text-sm font-medium text-gray-900">{backfilling ? 'Backfilling...' : 'Backfill Minifigures'}</p>
-              <p className="text-xs text-gray-500">{backfilling ? backfillProgress : 'Add minifigures from Rebrickable for all sets that don\'t have them yet'}</p>
+              <p className="text-xs text-gray-500">{backfilling ? backfillProgress : 'Scan ALL sets and add/update their minifigures from Rebrickable'}</p>
             </div>
           </button>
 

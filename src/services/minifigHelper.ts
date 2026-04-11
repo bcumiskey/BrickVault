@@ -4,42 +4,44 @@ import { storageService } from '@/services/storage';
 import type { CollectionSet, CollectionMinifigure } from '@/types/lego';
 
 // Known CMF theme IDs on Rebrickable
-// Theme 535 = "Collectable Minifigures" and its sub-themes
 const CMF_THEME_IDS = new Set([
   535, // Collectable Minifigures (parent)
-  741, 742, 743, 744, 745, 746, 747, 748, 749, 750, // Series 1-10
-  751, 752, 753, 754, 755, 756, 757, 758, 759, 760, // Series 11-20
-  761, 762, 763, 764, 765, // Series 21-25
-  // Disney, Simpsons, Harry Potter CMF series etc.
+  741, 742, 743, 744, 745, 746, 747, 748, 749, 750,
+  751, 752, 753, 754, 755, 756, 757, 758, 759, 760,
+  761, 762, 763, 764, 765,
   610, 612, 698, 700, 726, 727,
 ]);
 
-// Detect if a set is likely a CMF pack based on theme or naming
 function isCmfSet(set: CollectionSet): boolean {
   const themeId = set.set_data.theme_id;
   if (CMF_THEME_IDS.has(themeId)) return true;
-  // Heuristic: set name contains "Minifigures Series" or similar patterns
   const name = set.set_data.name.toLowerCase();
   if (name.includes('minifigures series') || name.includes('collectible minifigure')) return true;
-  // CMF packs are typically small sets (1-12 pieces) with set numbers like 71XXX-Y
   if (set.set_data.num_parts <= 12 && /^71\d{3}-\d+$/.test(set.set_num)) return true;
   return false;
 }
 
 /**
  * Auto-add minifigures from a set to the collection.
- * Handles NISB status (marks as SEALED_IN_SET) and CMF detection.
- * Returns the number of minifigures added.
+ * - If a minifig already exists, increments its quantity instead of skipping
+ * - Marks figures from NISB sets as SEALED_IN_SET
+ * - Detects CMF sets and categorizes accordingly
+ * - skipPartLookup=true skips the getMinifig call (faster for bulk backfill)
  */
 export async function autoAddMinifigsFromSet(
-  collectionSet: CollectionSet
+  collectionSet: CollectionSet,
+  options?: { skipPartLookup?: boolean }
 ): Promise<number> {
   try {
     const minifigResp = await rebrickableService.getSetMinifigs(collectionSet.set_num);
     if (!minifigResp.results || minifigResp.results.length === 0) return 0;
 
     const existingMinifigs = await storageService.getCollectionMinifigures();
-    const existingFigNums = new Set(existingMinifigs.map(m => m.fig_num));
+    // Map by fig_num for quick lookup
+    const existingByFigNum = new Map<string, CollectionMinifigure>();
+    for (const m of existingMinifigs) {
+      existingByFigNum.set(m.fig_num, m);
+    }
 
     const isNisb = collectionSet.status === 'NISB';
     const isCmf = isCmfSet(collectionSet);
@@ -47,15 +49,29 @@ export async function autoAddMinifigsFromSet(
     let addedCount = 0;
 
     for (const mf of minifigResp.results) {
-      if (existingFigNums.has(mf.set_num)) continue;
+      const existing = existingByFigNum.get(mf.set_num);
 
-      // Try to get actual part count from Rebrickable minifig endpoint
+      if (existing) {
+        // Already have this minifig — increment quantity
+        const updated: CollectionMinifigure = {
+          ...existing,
+          quantity: (existing.quantity || 1) + (mf.quantity || 1),
+        };
+        await storageService.saveCollectionMinifigure(updated);
+        existingByFigNum.set(mf.set_num, updated);
+        addedCount++;
+        continue;
+      }
+
+      // New minifig — optionally look up part count
       let numParts = 0;
-      try {
-        const details = await rebrickableService.getMinifig(mf.set_num) as { num_parts?: number };
-        numParts = details?.num_parts ?? 0;
-      } catch {
-        // Not critical — default to 0
+      if (!options?.skipPartLookup) {
+        try {
+          const details = await rebrickableService.getMinifig(mf.set_num) as { num_parts?: number };
+          numParts = details?.num_parts ?? 0;
+        } catch {
+          // Not critical
+        }
       }
 
       const minifig: CollectionMinifigure = {
@@ -71,7 +87,7 @@ export async function autoAddMinifigsFromSet(
         completeness_percentage: 100,
         condition: isNisb ? 'NEW' : 'GOOD',
         source: 'REBRICKABLE',
-        quantity: mf.quantity,
+        quantity: mf.quantity || 1,
         acquisitions: [],
         category: isCmf ? 'CMF' : 'SET_FIGURE',
         parent_set_id: collectionSet.id,
@@ -81,13 +97,8 @@ export async function autoAddMinifigsFromSet(
         updated_at: now,
       };
       await storageService.saveCollectionMinifigure(minifig);
-      existingFigNums.add(mf.set_num);
+      existingByFigNum.set(mf.set_num, minifig);
       addedCount++;
-
-      // Small delay to avoid hammering localStorage/API
-      if (addedCount % 10 === 0) {
-        await new Promise(r => setTimeout(r, 50));
-      }
     }
 
     return addedCount;
