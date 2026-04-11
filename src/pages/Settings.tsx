@@ -505,6 +505,46 @@ export default function Settings() {
             </div>
           </button>
 
+          {/* Fix Missing Prices */}
+          <button
+            onClick={async () => {
+              try {
+                const allSets = await storageService.getCollectionSets();
+                const needFix = allSets.filter(s => !s.purchase_price && s.retail_price);
+                if (needFix.length === 0) {
+                  showMessage('success', 'All sets with retail prices already have purchase prices set!');
+                  return;
+                }
+                let fixed = 0;
+                for (const s of needFix) {
+                  const updated: CollectionSet = {
+                    ...s,
+                    purchase_price: s.retail_price,
+                    acquisitions: s.acquisitions?.length ? s.acquisitions : [{
+                      id: `acq_fix_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                      date: s.created_at?.split('T')[0],
+                      price: s.retail_price,
+                      source: 'RETAIL' as const,
+                      source_detail: 'Set from retail price',
+                    }],
+                  };
+                  await storageService.saveCollectionSet(updated);
+                  fixed++;
+                }
+                showMessage('success', `Fixed prices on ${fixed} sets using retail price as purchase price.`);
+              } catch (err) {
+                showMessage('error', err instanceof Error ? err.message : 'Fix failed');
+              }
+            }}
+            className="w-full flex items-center gap-3 px-4 py-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
+          >
+            <Download className="w-5 h-5 text-gray-400" />
+            <div>
+              <p className="text-sm font-medium text-gray-900">Fix Missing Prices</p>
+              <p className="text-xs text-gray-500">Copy retail price to purchase price for sets that have no paid amount</p>
+            </div>
+          </button>
+
           {/* Export */}
           <button
             onClick={exportData}
