@@ -2,6 +2,16 @@
 import { neon } from '@neondatabase/serverless';
 
 export function getDb() {
-  const sql = neon(process.env.DATABASE_URL!);
-  return sql;
+  // Vercel + Neon integration sets multiple env vars — try them in order
+  const connectionString =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    '';
+
+  if (!connectionString) {
+    throw new Error('No database connection string found. Check Vercel environment variables.');
+  }
+
+  return neon(connectionString);
 }

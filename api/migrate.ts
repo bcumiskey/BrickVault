@@ -4,9 +4,9 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb } from './db';
 
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
-  const sql = getDb();
-
   try {
+    const sql = getDb();
+
     // Users table (for future auth — single default user for now)
     await sql`
       CREATE TABLE IF NOT EXISTS users (
@@ -36,7 +36,6 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       )
     `;
 
-    // Index for fast lookups
     await sql`
       CREATE INDEX IF NOT EXISTS idx_collection_sets_user ON collection_sets(user_id)
     `;
@@ -71,8 +70,23 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
     `;
 
     res.status(200).json({ success: true, message: 'Migration complete' });
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('Migration failed:', err);
-    res.status(500).json({ error: 'Migration failed', detail: String(err) });
+    const message = err instanceof Error ? err.message : String(err);
+    // Check for common issues
+    if (message.includes('connection') || message.includes('DATABASE_URL')) {
+      res.status(500).json({
+        error: 'Database connection failed',
+        detail: message,
+        hint: 'Check that DATABASE_URL or POSTGRES_URL is set in Vercel environment variables',
+        available_vars: {
+          DATABASE_URL: !!process.env.DATABASE_URL,
+          POSTGRES_URL: !!process.env.POSTGRES_URL,
+          POSTGRES_URL_NON_POOLING: !!process.env.POSTGRES_URL_NON_POOLING,
+        },
+      });
+    } else {
+      res.status(500).json({ error: 'Migration failed', detail: message });
+    }
   }
 }
