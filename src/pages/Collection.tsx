@@ -18,7 +18,7 @@ export default function Collection() {
   const [minifigs, setMinifigs] = useState<CollectionMinifigure[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<ItemFilter>('all');
+  const [filter, setFilter] = useState<ItemFilter>('sets');
   const [sort, setSort] = useState<SortOption>('newest');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [showFilters, setShowFilters] = useState(false);
@@ -409,6 +409,27 @@ export default function Collection() {
         />
       ) : (
         <>
+          {/* Type tabs */}
+          <div className="flex gap-2 mb-4">
+            {([
+              { key: 'sets' as const, label: `Sets (${sets.length})`, icon: Package },
+              { key: 'minifigs' as const, label: `Minifigures (${minifigs.length})`, icon: Package },
+              { key: 'all' as const, label: 'All', icon: Package },
+            ]).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setFilter(key)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filter === key
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* Search & controls */}
           <div className="flex flex-col sm:flex-row gap-3 mb-5">
             <div className="relative flex-1">
@@ -451,14 +472,6 @@ export default function Collection() {
           {/* Filter bar */}
           {showFilters && (
             <div className="bg-white border border-gray-200 rounded-lg p-4 mb-5 flex flex-wrap gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
-                <select value={filter} onChange={e => setFilter(e.target.value as ItemFilter)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
-                  <option value="all">All</option>
-                  <option value="sets">Sets</option>
-                  <option value="minifigs">Minifigures</option>
-                </select>
-              </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
